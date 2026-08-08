@@ -323,7 +323,7 @@ table.tbl{width:100%;border-collapse:collapse;}
       <a class="nav-item" data-nav="page-potential"><span class="nav-icon">⭐</span><span class="nav-text">潜力</span></a>
       <a class="nav-item" data-nav="page-review"><span class="nav-icon">📋</span><span class="nav-text">复盘</span></a>
     </nav>
-    <div class="sidebar-foot">v2.0 白蓝版<br>响应式多端适配<br>示例数据演示</div>
+    <div class="sidebar-foot">v2.7 · 数据融合版<br>多端适配 · 30s实时行情<br>自选股可增删</div>
   </aside>
 
   <!-- ===== 主内容 ===== -->
@@ -674,7 +674,9 @@ function watchStocks(){
     if(!found){ var cat = findCatalog(code); found = catalogFallback(cat, code); }
     if(QUOTE_CACHE[code]){ var qc = QUOTE_CACHE[code];
       found.price = qc.price; found.chg = qc.change_pct; found.pe = qc.pe_ttm;
-      found.pb = qc.pb; found.turnover = qc.turnover_pct; found.mcap = qc.mcap_yi; }
+      found.pb = qc.pb; found.turnover = qc.turnover_pct; found.mcap = qc.mcap_yi;
+      if(qc.name && found.name === found.code) found.name = qc.name;   // 用腾讯行情补真实名称
+    }
     out.push(found);
   }
   return out;
@@ -867,10 +869,21 @@ function renderSideList(){
     div.onclick = function(){ selectStock(div.getAttribute('data-code')); };
   });
 }
+function getStockObj(code){
+  for(var i=0;i<STOCKS.length;i++){ if(STOCKS[i].code===code) return STOCKS[i]; }
+  var qc = QUOTE_CACHE[code] || {};
+  var cat = findCatalog(code) || {};
+  return {code:code, name:qc.name || cat.name || code, industry:cat.industry || '--',
+    price:qc.price, chg:qc.change_pct, pe:qc.pe_ttm, pb:qc.pb, roe:null, rsi:null,
+    macd:'--', ma:'--', signal:'观望', mcap:qc.mcap_yi, turnover:qc.turnover_pct,
+    gubaScore:null, gubaFocus:null, gubaOrg:null, gubaCost:null, gubaRank:null,
+    newsSent:{label:'中性',pos:0,neg:0,neu:0}, dtText:'--', fundNet:null,
+    score:{tech:0,fund:0,cap:0,senti:0,value:0,overall:0},
+    ai:'该股票不在默认数据集：行情为腾讯实时，缠论/因子评分会自动生成；完整基本面待 fetch_all_data.py 纳入自选后刷新。', news:[]};
+}
 function selectStock(code){
   currentStock = code;
-  var s = null;
-  for(var i=0;i<STOCKS.length;i++){ if(STOCKS[i].code===code){ s=STOCKS[i]; break; } }
+  var s = getStockObj(code);
   if(!s) return;
   var c = chgCls(s.chg);
   document.getElementById('stock-head').innerHTML =
@@ -1059,7 +1072,8 @@ function fourMasterDeep(s){
   var peS = (!pe||pe<=10)?90:(pe<=20?80:(pe<=30?70:(pe<=40?58:45)));
   var roeS = roe ? (roe>=25?88:(roe>=18?80:(roe>=12?70:55))) : (q>=85?82:68);
   var bufScore = clamp(peS*0.4+roeS*0.35+guba*0.15+nsS*0.1-(pb>8?8:(pb>5?3:0)), 30, 96);
-  var base = (pe&&pe<=15)?s.price*1.08 : ((pe&&pe<=25)?s.price : s.price*0.92);
+  var base = (s.price>0 && pe && pe<=15) ? s.price*1.08 : ((s.price>0 && pe && pe<=25) ? s.price : (s.price>0 ? s.price*0.92 : 0));
+  var fair = (!s.price || s.price<=0) ? '数据待补' : ('保守'+Math.round(base*0.9)+' / 基准'+Math.round(base)+' / 乐观'+Math.round(base*1.15));
   var buf = {score:bufScore,
     key_points:[(roe?('ROE '+roe+'%'+(roe>=15?'（>15%达标）':'（未达15%线）')):'ROE待补'), '估值：'+peDesc+'（PE '+(pe||'--')+'）', 'PB '+(pb||'--'), (mcap>=1000?'市值'+mcap+'亿，大盘蓝筹流动性好':'市值'+mcap+'亿'), (guba>=70?'千股千评'+guba+'分':'')],
     concerns:['盈利增速与持续性需验证','行业周期/政策变化','资金流数据需结合确认（若主力净流出要警惕）'],
@@ -1095,7 +1109,7 @@ function fourMasterDeep(s){
     '结论：'+(avg>=75?'可考虑配置，注意买入节奏':(avg>=55?'观望等待更好价格':'暂不参与'))
   ];
   return {scores:{duanyongping:dypScore,buffett:bufScore,munger:munScore,lilu:liluScore}, avg:avg, rating:rating, consensus:consensus,
-    conflicts:conflicts, fair:'保守'+buf.fair_value_range.conservative+' / 基准'+buf.fair_value_range.base+' / 乐观'+buf.fair_value_range.optimistic,
+    conflicts:conflicts, fair:fair,
     safety_margin:buf.safety_margin, action:action, position:position, mirror:avg>=60, mirror_sentences:mirror_sentences,
     masters:{duanyongping:dyp, buffett:buf, munger:mun, lilu:lilu},
     note:'四大师深度引擎（数据驱动+行业模板，实时生成）'};
@@ -1299,7 +1313,15 @@ if(globalSearch){
           showPage('page-stock'); selectStock(STOCKS[i].code); globalSearch.value=''; return;
         }
       }
-      showPage('page-stock');
+      // 兜底：任意股票（目录/6位代码）→ 自动加入自选并打开
+      var cat = findCatalog(q);
+      if(cat){
+        if(WATCH.indexOf(cat.code)<0){ WATCH.push(cat.code); saveWatch(); syncWatchBackend(); renderAllWatch(); }
+        showPage('page-stock'); selectStock(cat.code); globalSearch.value='';
+        showToast('已定位 ' + cat.name + ' (' + cat.code + ')');
+        return;
+      }
+      showToast('未找到 ' + q + '（试试 6 位代码，如 000603）');
     }
   });
 }
@@ -1403,6 +1425,7 @@ function mergeFromReport(d){
   });
 }
 function init(){
+  console.log('[A股研究台] v2.7 加载完成');
   var d = new Date();
   var ds = d.toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric',weekday:'short'});
   var dt = document.getElementById('top-date');
