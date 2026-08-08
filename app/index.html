@@ -12,7 +12,7 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);padding-top:56px;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);padding-top:56px;overflow-x:hidden;}
 .up{color:var(--up)!important;}
 .down{color:var(--down)!important;}
 .flat{color:var(--muted)!important;}
@@ -83,8 +83,9 @@ table.tbl{width:100%;border-collapse:collapse;}
 .tag-small{background:#f3f4f6;color:#4b5563;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:4px;white-space:nowrap;display:inline-block;margin-bottom:3px;}
 
 /* ===== 首页 ===== */
-.home-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start;}
-.home-main{min-width:0;}
+.home-grid{display:grid;grid-template-columns:320px minmax(0,1fr) 300px;grid-template-areas:"c1 c2 side";gap:16px;align-items:start;}
+.home-c1{grid-area:c1;min-width:0;}
+.home-c2{grid-area:c2;min-width:0;}
 .market-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
 .market-card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.05);padding:14px 16px;position:relative;overflow:hidden;border-top:4px solid var(--primary);transition:all .2s;cursor:default;}
 .market-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08);}
@@ -258,7 +259,7 @@ table.tbl{width:100%;border-collapse:collapse;}
   #sidebar .nav-text,.sidebar-foot{display:none;}
   #main{padding:16px;}
   .search input{width:260px;}
-  .home-grid{grid-template-columns:minmax(0,1fr) 280px;}
+  .home-grid{grid-template-columns:minmax(0,1fr) 280px;grid-template-areas:"c1 side" "c2 side";}
   .stock-grid{grid-template-columns:230px minmax(0,1fr);}
 }
 /* ===== 手机（<768）===== */
@@ -330,11 +331,22 @@ table.tbl{width:100%;border-collapse:collapse;}
       <!-- ===== 页面1：首页 ===== -->
       <section class="page active" id="page-home">
         <div class="home-grid">
-          <div class="home-main">
+          <div class="home-c1">
             <div class="card">
               <h3 class="card-title">市场概况</h3>
               <div class="market-cards" id="market-cards"></div>
             </div>
+            <div class="card">
+              <h3 class="card-title">涨跌家数统计</h3>
+              <div class="updown">
+                <div class="ud-row"><span class="ud-label up">上涨</span><span class="ud-num up" data-count="3200">0</span></div>
+                <div class="ud-bar"><div class="ud-fill up" style="width:64%"></div><div class="ud-fill down" style="width:36%"></div></div>
+                <div class="ud-row"><span class="ud-label down">下跌</span><span class="ud-num down" data-count="1800">0</span></div>
+                <div class="ud-legend"><span>涨跌比 1.78 : 1</span><span>涨停 42 / 跌停 8</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="home-c2">
             <div class="card">
               <h3 class="card-title">自选股</h3>
               <div class="watch-add">
@@ -346,15 +358,6 @@ table.tbl{width:100%;border-collapse:collapse;}
                 <tbody id="watch-tbody"></tbody>
               </table>
               <div class="watch-cards" id="watch-cards"></div>
-            </div>
-            <div class="card">
-              <h3 class="card-title">涨跌家数统计</h3>
-              <div class="updown">
-                <div class="ud-row"><span class="ud-label up">上涨</span><span class="ud-num up" data-count="3200">0</span></div>
-                <div class="ud-bar"><div class="ud-fill up" style="width:64%"></div><div class="ud-fill down" style="width:36%"></div></div>
-                <div class="ud-row"><span class="ud-label down">下跌</span><span class="ud-num down" data-count="1800">0</span></div>
-                <div class="ud-legend"><span>涨跌比 1.78 : 1</span><span>涨停 42 / 跌停 8</span></div>
-              </div>
             </div>
           </div>
           <aside class="home-side">
@@ -413,16 +416,16 @@ table.tbl{width:100%;border-collapse:collapse;}
               <div class="kpi-row" id="kpi-row"></div>
             </div>
             <div class="card">
-              <h3 class="card-title">舆情 · 资金 · 龙虎榜</h3>
-              <div class="od-grid" id="od-card"></div>
+              <h3 class="card-title">缠论结构（czsc）</h3>
+              <div id="chan-card"></div>
             </div>
             <div class="card">
               <h3 class="card-title">四大师评分</h3>
               <div id="master-card"></div>
             </div>
             <div class="card">
-              <h3 class="card-title">缠论结构（czsc）</h3>
-              <div id="chan-card"></div>
+              <h3 class="card-title">舆情 · 资金 · 龙虎榜</h3>
+              <div class="od-grid" id="od-card"></div>
             </div>
             <div class="card">
               <h3 class="card-title">因子评分（Vibe-Trading）</h3>
@@ -777,22 +780,48 @@ function fetch7x24(){
     renderFlash();
   }).catch(function(){});
 }
+function applyQuote(k, q){
+  QUOTE_CACHE[k] = q;
+  for(var i=0;i<STOCKS.length;i++){
+    if(STOCKS[i].code===k){ STOCKS[i].price=q.price; STOCKS[i].chg=q.change_pct;
+      STOCKS[i].pe=q.pe_ttm; STOCKS[i].pb=q.pb; STOCKS[i].turnover=q.turnover_pct; STOCKS[i].mcap=q.mcap_yi; }
+  }
+}
+function applyQuotesThen(){
+  renderWatch(); renderSideList(); renderReview();
+  var st = document.getElementById('page-stock');
+  if(st && st.classList.contains('active')) selectStock(currentStock);
+}
 function fetchQuotes(){
   if(typeof fetch!=='function' || !WATCH.length) return;
-  fetch('/api/quote?codes='+WATCH.join(',')).then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
-    var m = d.codes||{};
-    for(var k in m){
-      var q = m[k];
-      QUOTE_CACHE[k] = q;
-      for(var i=0;i<STOCKS.length;i++){
-        if(STOCKS[i].code===k){ STOCKS[i].price=q.price; STOCKS[i].chg=q.change_pct;
-          STOCKS[i].pe=q.pe_ttm; STOCKS[i].pb=q.pb; STOCKS[i].turnover=q.turnover_pct; STOCKS[i].mcap=q.mcap_yi; }
-      }
-    }
-    renderWatch(); renderSideList(); renderReview();
-    var st = document.getElementById('page-stock');
-    if(st && st.classList.contains('active')) selectStock(currentStock);
-  }).catch(function(){});
+  function prefix(c){
+    c = String(c).toLowerCase();
+    if(c.indexOf('sh')===0 || c.indexOf('sz')===0 || c.indexOf('bj')===0) return c;
+    var x = c[0];
+    return (x==='6'||x==='9'||x==='5' ? 'sh' : 'sz') + c;
+  }
+  // ① 直连腾讯行情（CORS 失败自动回退本地代理）
+  var direct = 'https://qt.gtimg.cn/q=' + WATCH.map(prefix).join(',');
+  fetch(direct).then(function(r){ if(!r.ok) throw 0; return r.text(); }).then(function(txt){
+    var any = false;
+    String(txt||'').split(';').forEach(function(line){
+      if(line.indexOf('=')<0 || line.indexOf('"')<0) return;
+      var key = line.split('=')[0].split('_').pop();
+      var v = line.split('"')[1].split('~');
+      if(v.length < 47) return;
+      applyQuote(key, {name:v[1], price:parseFloat(v[3]), change_pct:parseFloat(v[32]),
+        pe_ttm:parseFloat(v[39]), pb:parseFloat(v[46]), turnover_pct:parseFloat(v[38]), mcap_yi:parseFloat(v[45])});
+      any = true;
+    });
+    if(!any) throw 0;
+    applyQuotesThen();
+  }).catch(function(){
+    fetch('/api/quote?codes='+WATCH.join(',')).then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
+      var m = d.codes||{};
+      for(var k in m) applyQuote(k, m[k]);
+      applyQuotesThen();
+    }).catch(function(){});
+  });
 }
 var SAMPLE_FLASH = [
   {time:'19:05', title:'【泽连斯基：美国将每月向乌克兰提供"爱国者"拦截导弹】乌克兰方面8日消息称，正在塞尔维亚…'},
@@ -1368,19 +1397,23 @@ function init(){
   renderSideList(); selectStock('600519');
   renderPotential('all'); renderReview(); renderMarketReview();
   runCountUp();
+  function applyReport(dd){
+    mergeFromReport(dd);
+    if(dd.potential_stocks) POTENTIAL_DATA = dd.potential_stocks;
+    MASTERS_DATA = {};
+    (dd.stocks||[]).forEach(function(x){ if(x.ai_berkshire && x.ai_berkshire.synthesis) MASTERS_DATA[x.code] = x.ai_berkshire.synthesis; });
+    if(dd.web_crawl && dd.web_crawl.cls_telegraph) flashItems = dd.web_crawl.cls_telegraph;
+    else if(dd.daily_review && dd.daily_review.key_events && dd.daily_review.key_events.length){
+      flashItems = dd.daily_review.key_events.map(function(t){ return {title:t, publish_time:'', source_site:'7x24'}; });
+    }
+    renderIndices(); renderWatch(); renderHot(); renderFlash();
+    renderSideList(); selectStock(currentStock); renderReview(); renderPotential(currentPotType); runCountUp();
+  }
   if(typeof fetch==='function'){
-    fetch('report_data.json').then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(dd){
-      mergeFromReport(dd);
-      if(dd.potential_stocks) POTENTIAL_DATA = dd.potential_stocks;
-      MASTERS_DATA = {};
-      (dd.stocks||[]).forEach(function(x){ if(x.ai_berkshire && x.ai_berkshire.synthesis) MASTERS_DATA[x.code] = x.ai_berkshire.synthesis; });
-      if(dd.web_crawl && dd.web_crawl.cls_telegraph) flashItems = dd.web_crawl.cls_telegraph;
-      else if(dd.daily_review && dd.daily_review.key_events && dd.daily_review.key_events.length){
-        flashItems = dd.daily_review.key_events.map(function(t){ return {title:t, publish_time:'', source_site:'7x24'}; });
-      }
-      renderIndices(); renderWatch(); renderHot(); renderFlash();
-      renderSideList(); selectStock(currentStock); renderReview(); renderPotential(currentPotType); runCountUp();
-    }).catch(function(){});
+    var getJson = function(url){ return fetch(url).then(function(r){ if(!r.ok) throw 0; return r.json(); }); };
+    getJson('report_data.json')   // ① 本地（实时服务器）
+      .catch(function(){ return getJson('https://raw.githubusercontent.com/kkion111/a-stock-research/main/data/report_data.json'); })  // ② GitHub raw 兜底
+      .then(applyReport).catch(function(){});
   }
   fetchHot(); fetch7x24(); fetchQuotes();
   setInterval(function(){ fetchHot(); fetch7x24(); }, 180000);
