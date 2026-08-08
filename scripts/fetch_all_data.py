@@ -288,22 +288,114 @@ def build_stock(item):
     return out
 
 
+def get_a_spot():
+    """全A行情快照，剔除 ST/退市/科创板(688689)/创业板(300301)。
+    ① 东财(含PE/量比/换手) → ② 新浪(含PE/换手/市值，无量比) → ③ 空"""
+    def _clean(code, name):
+        if not code or not name:
+            return False
+        if any(x in name for x in ("ST", "st", "退")):
+            return False
+        if code.startswith(("688", "689", "300", "301")):
+            return False
+        return True
+
+    def _f(v, scale=1.0):
+        try:
+            return float(v) / scale if scale != 1.0 else float(v)
+        except Exception:
+            return 0.0
+
+    def _emit(r):
+        code, name = str(r.get("代码", "")), str(r.get("名称", ""))
+        if not _clean(code, name):
+            return None
+        return {"code": code, "name": name, "sector": "--",
+                "price": round(_f(r.get("最新价")), 2),
+                "change": ("%+.2f%%" % _f(r.get("涨跌幅"))),
+                "pe": _f(r.get("市盈率-动态")) or _f(r.get("市盈率")) or _f(r.get("per")),
+                "turnover": _f(r.get("换手率")) or _f(r.get("turnoverratio")),
+                "lb": _f(r.get("量比")),
+                "mcap": _f(r.get("总市值"), 1e8) or _f(r.get("mktcap"), 1e8),
+                "chg": _f(r.get("涨跌幅"))}
+    rows = []
+    try:  # ① 东财
+        import akshare as ak
+        df = ak.stock_zh_a_spot_em()
+        for _, r in df.iterrows():
+            e = _emit(r)
+            if e:
+                rows.append(e)
+        if rows:
+            return rows
+    except Exception as e:
+        print("  东财全A快照失败(%s)，改用新浪" % str(e)[:50])
+    try:  # ② 新浪（无量比；接口偶发风控，重试2次）
+        import akshare as ak
+        import time as _t
+        for _attempt in range(2):
+            try:
+                df = ak.stock_zh_a_spot()
+                for _, r in df.iterrows():
+                    e = _emit(r)
+                    if e:
+                        rows.append(e)
+                if rows:
+                    print("  新浪全A快照: %d 只（无 量比 字段）" % len(rows))
+                    return rows
+                break
+            except Exception as e3:
+                print("  新浪全A快照失败(第%d次): %s" % (_attempt + 1, str(e3)[:50]))
+                _t.sleep(5)
+    except Exception as e2:
+        print("  新浪全A快照异常: %s" % str(e2)[:60])
+    return rows
+
+
 # ============================================================
 # 潜力股筛选
 # ============================================================
 def potential_filter(stocks):
-    cands = []
+    """潜力股：全A快照（除ST/科创/创业）轻量评分 + 自选股深度评分，合并取 Top8"""
+    pool = {}
+    # 1) 全A快照轻量评分（PE + 涨幅 + 量比）
+    for s in get_a_spot():
+        pe, price = s["pe"], s["price"]
+        if pe and not (0 < pe < 70):      # PE 缺失(0)时放行，快照来源不同
+            continue
+        if not (price and price > 3):
+            continue
+        pe_s = 50 if not pe else (90 if pe <= 15 else (80 if pe <= 25 else (65 if pe <= 40 else 50)))
+        mom = 85 if s["chg"] >= 3 else (70 if s["chg"] >= 1 else (60 if s["chg"] >= 0 else 45))
+        liq = 90 if s["lb"] >= 2 else (75 if s["lb"] >= 1.5 else (60 if s["lb"] >= 1 else 45))
+        comp = round(pe_s * 0.4 + mom * 0.35 + liq * 0.25, 1)
+        tags = []
+        if pe and pe <= 20:
+            tags.append("低PE")
+        if s["chg"] >= 3:
+            tags.append("涨幅居前")
+        if s["lb"] >= 2:
+            tags.append("放量")
+        if s["turnover"] >= 5:
+            tags.append("高换手")
+        pool[s["code"]] = {"rank": 0, "code": s["code"], "name": s["name"], "sector": s["sector"],
+                           "price": s["price"], "change": s["change"], "composite_score": comp,
+                           "factor_tags": [t for t in tags if t != "低PE"],
+                           "value_tags": [t for t in tags if t == "低PE"],
+                           "tech_tags": [],
+                           "reason": "全A快照: PE%.0f 涨%.1f%% 量比%.1f" % (pe, s["chg"], s["lb"])}
+    # 2) 自选股深度评分（覆盖同代码）
     for s in stocks:
         pe, roe, price = s["fundamental"]["pe"], s["fundamental"]["roe"], s["price"]
         if not (pe and 0 < pe < 70):
             continue
-        if roe and roe <= 5:  # ROE 数据缺失(0)时按受限处理，不拦截
+        if roe and roe <= 5:
             continue
         if not (price and price > 3):
             continue
         chan = s["technical"]["chan_theory"]
-        tech = 50 + (20 if any(x in (chan.get("buy_point") or "") for x in ["买"]) else 0) \
-               - (15 if any(x in (chan.get("latest_signal") or "") for x in ["卖"]) else 0) \
+        tech = 50 + (20 if "买" in (chan.get("buy_point") or "") else 0) \
+               - (15 if "卖" in (chan.get("latest_signal") or "") else 0) \
                + (10 if "多头" in s["technical"].get("signal", "") else (-10 if "空头" in s["technical"].get("signal", "") else 0))
         tech = max(0, min(100, tech))
         fund = (80 if pe <= 15 else 70 if pe <= 30 else 55 if pe <= 50 else 40) + (15 if roe and roe >= 20 else 10 if roe and roe >= 15 else 0)
@@ -313,31 +405,29 @@ def potential_filter(stocks):
         if masters.get("synthesis"):
             master = round((masters["duan"]["score"] + masters["buffett"]["score"] +
                             masters["munger"]["score"] + masters["li"]["score"]) / 4)
-        sent = 50
-        if s["sentiment"]["news"]:
-            sent = _lexicon_score(s["sentiment"]["news"])
-        composite = round(tech * 0.25 + fund * 0.2 + fac * 0.2 + master * 0.25 + sent * 0.1, 1)
+        sent = _lexicon_score(s["sentiment"]["news"]) if s["sentiment"]["news"] else 50
+        comp = round(tech * 0.25 + fund * 0.2 + fac * 0.2 + master * 0.25 + sent * 0.1, 1)
         tags = []
         if pe <= 20 and roe and roe >= 15:
             tags.append("价值型")
         if sent >= 55 and pe < 40:
             tags.append("成长型")
-        if "多头" in s["technical"].get("signal", "") or (chan.get("buy_point")):
+        if "多头" in s["technical"].get("signal", "") or chan.get("buy_point"):
             tags.append("技术型")
         if (s.get("fundamental") or {}).get("capital_flow_20d_yi", 0) and s["fundamental"]["capital_flow_20d_yi"] > 0:
             tags.append("资金型")
         if chan.get("buy_point"):
             tags.append("缠论型")
-        cands.append({"rank": 0, "code": s["code"], "name": s["name"], "sector": s["sector"],
-                      "price": s["price"], "change": s["change"], "composite_score": composite,
-                      "factor_tags": [t for t in tags if t in ("成长型", "技术型", "资金型")],
-                      "value_tags": [t for t in tags if t == "价值型"],
-                      "tech_tags": [t for t in tags if t == "缠论型"],
-                      "reason": "综合%.1f（技术%d 基本面%d 因子%.0f 四大师%d 舆情%.0f）" % (composite, tech, fund, fac, master, sent)})
-    cands.sort(key=lambda x: -x["composite_score"])
-    for i, c in enumerate(cands[:8]):
+        pool[s["code"]] = {"rank": 0, "code": s["code"], "name": s["name"], "sector": s["sector"],
+                           "price": s["price"], "change": s["change"], "composite_score": comp,
+                           "factor_tags": [t for t in tags if t in ("成长型", "技术型", "资金型")],
+                           "value_tags": [t for t in tags if t == "价值型"],
+                           "tech_tags": [t for t in tags if t == "缠论型"],
+                           "reason": "综合%.1f（技术%d 基本%d 因子%.0f 四大师%d 舆情%.0f）" % (comp, tech, fund, fac, master, sent)}
+    cands = sorted(pool.values(), key=lambda x: -x["composite_score"])[:8]
+    for i, c in enumerate(cands):
         c["rank"] = i + 1
-    return cands[:8]
+    return cands
 
 
 # ============================================================
