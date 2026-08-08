@@ -1,0 +1,62 @@
+name: Daily A-Stock Research + Feishu Push
+
+on:
+  schedule:
+    - cron: '0 10 * * *'    # UTC 10:00 = 北京时间 18:00（完整分析+推送）
+    - cron: '30 0 * * *'    # UTC 00:30 = 北京时间 08:30（早报推送）
+  workflow_dispatch:
+
+jobs:
+  full_analysis:
+    if: github.event.schedule == '0 10 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --no-cache-dir mootdx requests pandas numpy matplotlib beautifulsoup4 lxml akshare
+          pip install --no-cache-dir czsc
+          pip install --no-cache-dir win32-setctime wrapt deprecated 2>/dev/null || true
+          pip install --no-cache-dir playwright crawl4ai 2>/dev/null || true
+          python -m playwright install chromium 2>/dev/null || true
+
+      - name: Run full data fetch
+        run: python scripts/fetch_all_data.py
+
+      - name: Push to Feishu（复盘+完整潜力股）
+        run: python scripts/feishu_notify.py --mode full
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+
+      - name: Commit reports
+        run: |
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git add -f data/report_data.json reports/ || true
+          git commit -m "Daily full update $(date +%Y-%m-%d)" || exit 0
+          git push
+
+  morning_brief:
+    if: github.event.schedule == '30 0 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install minimal deps
+        run: pip install --no-cache-dir requests
+
+      - name: Push morning brief（早报，不重新跑数据）
+        run: python scripts/feishu_notify.py --mode morning
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
