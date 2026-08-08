@@ -382,18 +382,28 @@ def main():
         len(market["indices"]), market["up_count"], market["down_count"], market["volume"], len(market["leading_sectors"])))
     print("潜力股 Top%d: %s" % (len(potential), "、".join("%s(%.1f)" % (p["name"], p["composite_score"]) for p in potential)))
 
-    # 飞书推送（环境变量 FEISHU_WEBHOOK 存在时；本地无则跳过）
+    # 飞书推送（feishu.enabled=true 且 webhook 存在时）
     try:
         import feishu_notify
         wh = feishu_notify.get_webhook()
-        if wh:
-            print("==> 飞书推送（每日复盘 + 潜力股日报）...")
+        enabled = True
+        try:
+            cfg = json.load(open(os.path.join(ROOT, "config", "settings.json"), encoding="utf-8"))
+            enabled = (cfg.get("feishu") or {}).get("enabled", True)
+        except Exception:
+            pass
+        if wh and enabled:
+            print("==> 飞书推送（每日复盘 + 潜力股Top5 + 缠论信号 + 异动预警）...")
             for name, fn in [("每日复盘", feishu_notify.push_daily_review),
-                             ("潜力股日报", feishu_notify.push_potential_full)]:
+                             ("潜力股Top5", feishu_notify.push_potential_stocks)]:
                 st, txt = fn(wh)
                 print("   %s: %s %s" % (name, st, txt[:60]))
+            ch = feishu_notify.push_chan_alerts(wh, report)
+            print("   缠论信号: %s" % (ch if ch else "无买点信号"))
+            mv = feishu_notify.push_move_alerts(wh, report, threshold=5.0)
+            print("   异动预警: %s" % (mv if mv else "无异动(阈值5%)"))
         else:
-            print("==> 未配置 FEISHU_WEBHOOK（环境变量或 settings.json），跳过飞书推送")
+            print("==> 飞书推送未启用（feishu.enabled=false 或未配置 FEISHU_WEBHOOK）")
     except Exception as e:
         print("==> 飞书推送跳过: %s" % str(e)[:80])
 
