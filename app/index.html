@@ -202,6 +202,8 @@ table.tbl{width:100%;border-collapse:collapse;}
 .ml-sub{font-size:12px;color:#4b5563;line-height:1.7;margin-top:6px;}
 .ml-list{margin:4px 0 0 18px;font-size:12px;color:#4b5563;line-height:1.7;}
 .mreview{max-height:480px;overflow-y:auto;background:var(--th);border-radius:8px;padding:14px;font-size:12px;line-height:1.7;color:#374151;white-space:pre-wrap;font-family:inherit;}
+#toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;transition:opacity .25s;pointer-events:none;max-width:80%;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.2);}
+#toast.show{opacity:1;}
 @media(max-width:767px){.od-grid{grid-template-columns:1fr;}}
 .ai-q{font-size:20px;color:var(--primary);flex-shrink:0;line-height:1.2;}
 .ai-text{font-size:14px;color:#4b5563;line-height:1.8;}
@@ -521,6 +523,7 @@ table.tbl{width:100%;border-collapse:collapse;}
 </nav>
 <button class="watch-toggle" id="watch-toggle" type="button">📋 自选</button>
 <div class="watch-mask" id="watch-mask"></div>
+<div id="toast"></div>
 
 <script>
 /* ============ 示例数据 ============ */
@@ -655,6 +658,8 @@ function findCatalog(codeOrName){
     var s = STOCK_CATALOG[i];
     if(s.code.toLowerCase()===q || s.name.toLowerCase()===q || s.name.indexOf(String(codeOrName).trim())>=0) return s;
   }
+  // 兜底：任意 6 位数字代码均可添加（名称先用代码，数据刷新后补全）
+  if(/^\d{6}$/.test(q)) return {code:q, name:q, industry:'--'};
   return null;
 }
 function catalogFallback(cat, code){
@@ -676,9 +681,10 @@ function watchStocks(){
 }
 function addStock(codeOrName){
   var cat = findCatalog(codeOrName);
-  if(!cat){ alert('未找到该股票（试试输入代码，如 601318）'); return false; }
-  if(WATCH.indexOf(cat.code) >= 0){ alert('已在自选股中'); return false; }
+  if(!cat){ showToast('未找到该股票（试试输入代码，如 601318）'); return false; }
+  if(WATCH.indexOf(cat.code) >= 0){ showToast('已在自选股中'); return false; }
   WATCH.push(cat.code); saveWatch(); renderAllWatch(); syncWatchBackend();
+  showToast('已添加 ' + cat.name + ' (' + cat.code + ')');
   return true;
 }
 function removeStock(code){
@@ -1298,6 +1304,14 @@ if(globalSearch){
   });
 }
 /* 自选股 添加/删除 绑定 */
+var toastTimer = null;
+function showToast(msg){
+  var t = document.getElementById('toast');
+  if(!t){ alert(msg); return; }
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2200);
+}
 function refreshLive(){
   fetchHot(); fetch7x24(); fetchQuotes(); runCountUp();
   var rt = document.getElementById('refresh-time');
