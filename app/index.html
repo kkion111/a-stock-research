@@ -323,7 +323,7 @@ table.tbl{width:100%;border-collapse:collapse;}
       <a class="nav-item" data-nav="page-potential"><span class="nav-icon">⭐</span><span class="nav-text">潜力</span></a>
       <a class="nav-item" data-nav="page-review"><span class="nav-icon">📋</span><span class="nav-text">复盘</span></a>
     </nav>
-    <div class="sidebar-foot">v2.7 · 数据融合版<br>多端适配 · 30s实时行情<br>自选股可增删</div>
+    <div class="sidebar-foot">v2.8 · 数据融合版<br>多端适配 · 30s实时行情<br>自选股可增删</div>
   </aside>
 
   <!-- ===== 主内容 ===== -->
@@ -686,6 +686,7 @@ function addStock(codeOrName){
   if(!cat){ showToast('未找到该股票（试试输入代码，如 601318）'); return false; }
   if(WATCH.indexOf(cat.code) >= 0){ showToast('已在自选股中'); return false; }
   WATCH.push(cat.code); saveWatch(); renderAllWatch(); syncWatchBackend();
+  fetchQuotes();   // 添加后立即拉一次实时行情（名称/价格马上显示）
   showToast('已添加 ' + cat.name + ' (' + cat.code + ')');
   return true;
 }
@@ -886,12 +887,13 @@ function selectStock(code){
   var s = getStockObj(code);
   if(!s) return;
   var c = chgCls(s.chg);
+  var chgTxt = fmtChg(s.chg);
   document.getElementById('stock-head').innerHTML =
     '<div class="sh-left"><div class="sh-name">'+s.name+'<span class="sh-code">'+s.code+'</span><span class="sh-industry">'+s.industry+'</span></div>'+
     '<div class="sh-price-row"><span class="sh-price '+c+'">'+fmtNum(s.price)+'</span>'+
-    '<span class="sh-chg '+c+'">'+(s.chg>=0?'+':'')+s.chg.toFixed(2)+'%</span></div>'+
-    '<div class="sh-meta"><span class="tag">市值 '+fmtNum(s.mcap)+' 亿</span><span class="tag">换手 '+s.turnover.toFixed(2)+'%</span>'+
-    '<span class="tag">PE(TTM) '+s.pe.toFixed(2)+'</span><span class="tag">PB '+s.pb.toFixed(2)+'</span></div></div>'+
+    '<span class="sh-chg '+c+'">'+chgTxt+'</span></div>'+
+    '<div class="sh-meta"><span class="tag">市值 '+fmtNum(s.mcap)+' 亿</span><span class="tag">换手 '+fmtNum(s.turnover)+'%</span>'+
+    '<span class="tag">PE(TTM) '+fmtNum(s.pe)+'</span><span class="tag">PB '+fmtNum(s.pb)+'</span></div></div>'+
     '<div style="margin-left:auto">'+sigHtml(s.signal)+'</div>';
   var total = 263.9, off = total*(1 - s.score.overall/100);
   document.getElementById('ring-val').setAttribute('stroke-dashoffset', off.toFixed(1));
@@ -901,7 +903,9 @@ function selectStock(code){
     var v = s.score[kv[0]];
     return '<div class="sb-row"><span class="sb-name">'+kv[1]+'</span><div class="sb-track"><div class="sb-fill" data-w="'+v+'" style="width:0%"></div></div><span class="sb-score" data-count="'+v+'">0</span></div>';
   }).join('');
-  var kpi = [['PE(TTM)', s.pe.toFixed(2)],['PB', s.pb.toFixed(2)],['ROE', s.roe.toFixed(1)+'%'],['RSI', s.rsi.toFixed(1)],['MACD', s.macd],['均线', s.ma]];
+  var kpi = [['PE(TTM)', fmtNum(s.pe)],['PB', fmtNum(s.pb)],
+             ['ROE', (s.roe==null||s.roe===undefined)?'--':s.roe.toFixed(1)+'%'],
+             ['RSI', fmtNum(s.rsi)],['MACD', s.macd||'--'],['均线', s.ma||'--']];
   document.getElementById('kpi-row').innerHTML = kpi.map(function(k){
     var vc = (k[0]==='MACD'||k[0]==='均线') ? (k[1]==='金叉'||k[1]==='多头' ? 'up':'down') : chgCls(s.chg);
     return '<div class="kpi-card"><div class="kpi-label">'+k[0]+'</div><div class="kpi-value '+vc+'">'+k[1]+'</div></div>';
@@ -1425,7 +1429,7 @@ function mergeFromReport(d){
   });
 }
 function init(){
-  console.log('[A股研究台] v2.7 加载完成');
+  console.log('[A股研究台] v2.8 加载完成');
   var d = new Date();
   var ds = d.toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric',weekday:'short'});
   var dt = document.getElementById('top-date');
