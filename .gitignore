@@ -1,0 +1,22 @@
+# 运行时数据（CI 会重新生成/强制提交 report_data.json）
+logs/
+data/*.json
+data/klines/
+data/snapshot/
+data/fundamental/
+reports/*/
+app/*.json
+app/market_review.md
+
+# 本地环境与依赖（体积大 / 含敏感信息，不推）
+.env
+_libs/
+Vibe-Trading/
+daily_stock_analysis/
+agent-reach/
+ai-berkshire/
+a-stock-data/
+
+# Python
+__pycache__/
+*.pyc
