@@ -323,7 +323,7 @@ table.tbl{width:100%;border-collapse:collapse;}
       <a class="nav-item" data-nav="page-potential"><span class="nav-icon">⭐</span><span class="nav-text">潜力</span></a>
       <a class="nav-item" data-nav="page-review"><span class="nav-icon">📋</span><span class="nav-text">复盘</span></a>
     </nav>
-    <div class="sidebar-foot">v2.8 · 数据融合版<br>多端适配 · 30s实时行情<br>自选股可增删</div>
+    <div class="sidebar-foot">v2.9 · 数据融合版<br>多端适配 · 30s实时行情<br>自选股可增删</div>
   </aside>
 
   <!-- ===== 主内容 ===== -->
@@ -789,7 +789,12 @@ function fetch7x24(){
     renderFlash();
   }).catch(function(){});
 }
+function normCode(k){
+  k = String(k||'');
+  return (k.length>6 && (k.indexOf('sh')===0 || k.indexOf('sz')===0 || k.indexOf('bj')===0)) ? k.slice(2) : k;
+}
 function applyQuote(k, q){
+  k = normCode(k);   // 去掉 sh/sz/bj 前缀，统一用裸代码
   QUOTE_CACHE[k] = q;
   for(var i=0;i<STOCKS.length;i++){
     if(STOCKS[i].code===k){ STOCKS[i].price=q.price; STOCKS[i].chg=q.change_pct;
@@ -803,34 +808,12 @@ function applyQuotesThen(){
 }
 function fetchQuotes(){
   if(typeof fetch!=='function' || !WATCH.length) return;
-  function prefix(c){
-    c = String(c).toLowerCase();
-    if(c.indexOf('sh')===0 || c.indexOf('sz')===0 || c.indexOf('bj')===0) return c;
-    var x = c[0];
-    return (x==='6'||x==='9'||x==='5' ? 'sh' : 'sz') + c;
-  }
-  // ① 直连腾讯行情（CORS 失败自动回退本地代理）
-  var direct = 'https://qt.gtimg.cn/q=' + WATCH.map(prefix).join(',');
-  fetch(direct).then(function(r){ if(!r.ok) throw 0; return r.text(); }).then(function(txt){
-    var any = false;
-    String(txt||'').split(';').forEach(function(line){
-      if(line.indexOf('=')<0 || line.indexOf('"')<0) return;
-      var key = line.split('=')[0].split('_').pop();
-      var v = line.split('"')[1].split('~');
-      if(v.length < 47) return;
-      applyQuote(key, {name:v[1], price:parseFloat(v[3]), change_pct:parseFloat(v[32]),
-        pe_ttm:parseFloat(v[39]), pb:parseFloat(v[46]), turnover_pct:parseFloat(v[38]), mcap_yi:parseFloat(v[45])});
-      any = true;
-    });
-    if(!any) throw 0;
+  // 腾讯 qt.gtimg.cn 有 CORS 限制（浏览器直连被拒且 GBK 乱码），统一走本地 /api/quote 代理（服务端已解码）
+  fetch('/api/quote?codes='+WATCH.join(',')).then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
+    var m = d.codes||{};
+    for(var k in m) applyQuote(k, m[k]);
     applyQuotesThen();
-  }).catch(function(){
-    fetch('/api/quote?codes='+WATCH.join(',')).then(function(r){ if(!r.ok) throw 0; return r.json(); }).then(function(d){
-      var m = d.codes||{};
-      for(var k in m) applyQuote(k, m[k]);
-      applyQuotesThen();
-    }).catch(function(){});
-  });
+  }).catch(function(){});
 }
 var SAMPLE_FLASH = [
   {time:'19:05', title:'【泽连斯基：美国将每月向乌克兰提供"爱国者"拦截导弹】乌克兰方面8日消息称，正在塞尔维亚…'},
@@ -1082,7 +1065,7 @@ function fourMasterDeep(s){
     key_points:[(roe?('ROE '+roe+'%'+(roe>=15?'（>15%达标）':'（未达15%线）')):'ROE待补'), '估值：'+peDesc+'（PE '+(pe||'--')+'）', 'PB '+(pb||'--'), (mcap>=1000?'市值'+mcap+'亿，大盘蓝筹流动性好':'市值'+mcap+'亿'), (guba>=70?'千股千评'+guba+'分':'')],
     concerns:['盈利增速与持续性需验证','行业周期/政策变化','资金流数据需结合确认（若主力净流出要警惕）'],
     fair_value_range:{conservative:Math.round(base*0.9), base:Math.round(base), optimistic:Math.round(base*1.15), current:s.price},
-    safety_margin:'现价'+s.price+' vs 基准'+Math.round(base)+'：'+(s.price<=base?'具备安全边际':'安全边际不足（现价高于基准约'+Math.round((s.price/base-1)*100)+'%）')};
+    safety_margin:(!s.price || s.price<=0) ? '数据待补（等实时行情）' : ('现价'+s.price+' vs 基准'+Math.round(base)+'：'+(s.price<=base?'具备安全边际':'安全边际不足（现价高于基准约'+Math.round((s.price/base-1)*100)+'%）'))};
   var neg = ns.neg||0;
   var risk = neg*6 + (s.ma==='空头'?10:0) + ((s.chg||0)<-2?8:0) + (guba>92?8:0);
   var munScore = clamp(100-risk-(100-guba)*0.1, 30, 90);
@@ -1429,7 +1412,7 @@ function mergeFromReport(d){
   });
 }
 function init(){
-  console.log('[A股研究台] v2.8 加载完成');
+  console.log('[A股研究台] v2.9 加载完成');
   var d = new Date();
   var ds = d.toLocaleDateString('zh-CN', {year:'numeric',month:'long',day:'numeric',weekday:'short'});
   var dt = document.getElementById('top-date');
