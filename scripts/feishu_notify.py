@@ -145,6 +145,76 @@ def build_morning_brief(report):
 
 
 # ============================================================
+# 场景B：潜力股 Top5 推送（排名+名称+价格+涨跌幅+评分+标签）
+# ============================================================
+def build_potential_stocks(report):
+    pot = (report.get("potential_stocks") or [])[:5]
+    elems = []
+    if not pot:
+        elems.append({"tag": "div", "text": {"tag": "lark_md", "content": "今日无满足筛选条件的潜力股"}})
+    for p in pot:
+        elems.append({"tag": "div", "text": {"tag": "lark_md", "content":
+                      "**%d. %s** %s\n💰 %s | %s | 评分 %s\n🏷️ %s" % (
+                          p.get("rank"), p.get("name"), p.get("code"),
+                          p.get("price"), p.get("change") or "—",
+                          p.get("composite_score", 0), _tag_str(p))}})
+        elems.append({"tag": "hr"})
+    elems.append({"tag": "note", "elements": [{"tag": "plain_text", "content": "基于收盘数据，结合实时走势判断"}]})
+    return {"config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": "⭐ 今日潜力股Top 5 - %s" % _today()}, "template": "blue"},
+            "elements": elems}
+
+
+# ============================================================
+# 场景C：缠论信号提醒（出现买点信号时推送）
+# ============================================================
+def build_chan_alert(name, code, chan):
+    bp = chan.get("buy_point") or chan.get("latest_signal") or "结构"
+    detail = chan.get("suggestion") or "日线结构变化，建议关注"
+    score = 78 if "一买" in bp else (72 if "二买" in bp else 66)
+    return {"config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": "📡 缠论信号提醒"}, "template": "orange"},
+            "elements": [
+                {"tag": "div", "text": {"tag": "lark_md",
+                 "content": "**%s(%s)** 出现【%s信号】" % (name, code, bp)}},
+                {"tag": "div", "text": {"tag": "lark_md", "content": "详情：%s\n评分：%d 分" % (detail, score)}},
+                {"tag": "note", "elements": [{"tag": "plain_text", "content": "A股研究台 · 缠论结构监控"}]}]}
+
+
+def push_chan_alerts(webhook, report):
+    """扫描所有股票，出现买点信号则推送；返回已推送列表。"""
+    sent = []
+    for s in report.get("stocks", []):
+        chan = (s.get("technical") or {}).get("chan_theory") or {}
+        bp = chan.get("buy_point") or ""
+        if bp and ("买" in bp):
+            st, _ = send(webhook, build_chan_alert(s.get("name"), s.get("code"), chan))
+            sent.append((s.get("code"), bp, st))
+    return sent
+
+
+# ============================================================
+# 场景D：异动预警（涨跌幅超过阈值，复用 push_alert）
+# ============================================================
+def push_move_alerts(webhook, report, threshold=5.0):
+    sent = []
+    for s in report.get("stocks", []):
+        chg = s.get("change", "") or ""
+        try:
+            v = float(str(chg).replace("%", "").replace("+", ""))
+        except Exception:
+            continue
+        if abs(v) >= threshold:
+            typ = "大涨" if v > 0 else "大跌"
+            msg = "%s(%s) %s %+.1f%%，%s" % (
+                s.get("name"), s.get("code"), typ, v,
+                "突破前期高点，注意追高风险" if v > 0 else "触及止损/支撑位，注意风险")
+            st, _ = send(webhook, build_alert(s.get("code"), typ + "异动", msg))
+            sent.append((s.get("code"), v, st))
+    return sent
+
+
+# ============================================================
 # 4. 异动预警（预留）
 # ============================================================
 def build_alert(code, alert_type, message):
@@ -173,6 +243,15 @@ def push_potential_full(webhook=None):
     return send(wh, build_potential_full(rep))
 
 
+def push_potential_stocks(webhook=None):
+    """场景B：潜力股 Top5 推送"""
+    wh = webhook or get_webhook()
+    rep = load_report()
+    if not rep:
+        return "report_data.json 不存在，跳过"
+    return send(wh, build_potential_stocks(rep))
+
+
 def push_morning_brief(webhook=None):
     wh = webhook or get_webhook()
     rep = load_report()
@@ -196,9 +275,10 @@ def main():
         return 1
     if args.mode == "test":
         card = {"config": {"wide_screen_mode": True},
-                "header": {"title": {"tag": "plain_text", "content": "✅ 测试消息 - A股研究台"}, "template": "blue"},
-                "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": "飞书推送链路正常 ✅"}},
-                             {"tag": "note", "elements": [{"tag": "plain_text", "content": "本消息由本地测试发送"}]}]}
+                "header": {"title": {"tag": "plain_text", "content": "✅ 连接成功 - A股研究台"}, "template": "blue"},
+                "elements": [{"tag": "div", "text": {"tag": "lark_md",
+                              "content": "🎉 A股研究台已连接飞书！每日复盘和潜力股将自动推送至此。"}},
+                             {"tag": "note", "elements": [{"tag": "plain_text", "content": "本消息由测试模式发送"}]}]}
         st, txt = send(wh, card)
         print("测试推送:", st, txt[:120])
         return 0 if st == 200 else 1
