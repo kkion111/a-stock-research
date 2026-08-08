@@ -6,6 +6,9 @@ on:
     - cron: '30 0 * * *'    # UTC 00:30 = 北京时间 08:30（早报推送）
   workflow_dispatch:
 
+permissions:
+  contents: write   # 允许 CI 把 report_data.json 提交回仓库（默认只读会 403）
+
 jobs:
   full_analysis:
     if: github.event.schedule == '0 10 * * *' || github.event_name == 'workflow_dispatch'
